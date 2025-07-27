@@ -1,0 +1,15 @@
+2025/07/27-20:49:23.209 2084 Reusing MANIFEST C:\Users\salar\OneDrive\Desktop\docker\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Local Storage\leveldb/MANIFEST-000001
+2025/07/27-20:49:23.215 2084 Recovering log #49
+2025/07/27-20:49:23.217 2084 Reusing old log C:\Users\salar\OneDrive\Desktop\docker\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Local Storage\leveldb/000049.log 
+2025/07/27-20:51:23.583 3b34 Level-0 table #53: started
+2025/07/27-20:51:23.590 3b34 Level-0 table #53: 16467 bytes OK
+2025/07/27-20:51:23.596 3b34 Delete type=0 #49
+2025/07/27-20:51:23.597 3b34 Compacting 4@0 + 1@1 files
+2025/07/27-20:51:23.610 3b34 Generated table #54@0: 59 keys, 5746 bytes
+2025/07/27-20:51:23.610 3b34 Compacted 4@0 + 1@1 files => 5746 bytes
+2025/07/27-20:51:23.613 3b34 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/07/27-20:51:23.615 3b34 Delete type=2 #42
+2025/07/27-20:51:23.615 3b34 Delete type=2 #45
+2025/07/27-20:51:23.615 3b34 Delete type=2 #47
+2025/07/27-20:51:23.615 3b34 Delete type=2 #50
+2025/07/27-20:51:23.615 3b34 Delete type=2 #53

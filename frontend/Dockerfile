@@ -1,17 +1,15 @@
-# frontend/Dockerfile
-FROM node:18 AS build
-
+# Build React app
+FROM node:18-alpine AS builder
 WORKDIR /app
-
+COPY package*.json ./
+RUN npm install
 COPY . .
+ARG REACT_APP_BACKEND_URL
+ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
+RUN npm run build
 
-RUN npm install && npm run build
-
-# Serve the build using Nginx
-FROM nginx:alpine
-
-COPY --from=build /app/build /usr/share/nginx/html
-
+# Serve via Nginx
+FROM nginx:stable-alpine
+COPY --from=builder /app/build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]

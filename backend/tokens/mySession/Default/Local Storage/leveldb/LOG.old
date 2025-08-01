@@ -1,5 +1,0 @@
-2025/07/07-15:32:45.974 4480 Creating DB C:\Users\salar\OneDrive\Desktop\docker\bot\backend\tokens\mySession\Default\Local Storage\leveldb since it was missing.
-2025/07/07-15:32:46.045 4480 Reusing MANIFEST C:\Users\salar\OneDrive\Desktop\docker\bot\backend\tokens\mySession\Default\Local Storage\leveldb/MANIFEST-000001
-2025/07/07-15:57:46.814 21cc Level-0 table #5: started
-2025/07/07-15:57:46.821 21cc Level-0 table #5: 21665 bytes OK
-2025/07/07-15:57:46.829 21cc Delete type=0 #3

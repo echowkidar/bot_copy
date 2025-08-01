@@ -1,10 +1,13 @@
 version: "3.8"
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     container_name: wppconnect-backend
     ports:
       - "3002:3002"
+    environment:
+      - PUPPETEER_CHROMIUM_ARGS=--no-sandbox
     restart: unless-stopped
 
   frontend:

@@ -1,10 +1,9 @@
-# backend/Dockerfile
 FROM node:18
 
-# Install Chromium and dependencies
+# Install Puppeteer dependencies
 RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-driver \
+    wget \
+    ca-certificates \
     fonts-liberation \
     libappindicator3-1 \
     libasound2 \
@@ -15,23 +14,26 @@ RUN apt-get update && apt-get install -y \
     libgdk-pixbuf2.0-0 \
     libnspr4 \
     libnss3 \
+    libx11-xcb1 \
     libxcomposite1 \
     libxdamage1 \
     libxrandr2 \
     xdg-utils \
-    wget \
-    --no-install-recommends && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    libu2f-udev \
+    libvulkan1 \
+    --no-install-recommends
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
+# Set working directory
 WORKDIR /app
 
+# Copy project files
 COPY . .
 
+# Install Node.js dependencies
 RUN npm install
 
-EXPOSE 3002
+# Create tokens folder (if required)
+RUN mkdir -p /app/tokens
 
-CMD ["npm", "start"]
+# Run the server
+CMD ["node", "server.js"]

@@ -52,6 +52,9 @@ async function initializeWPPConnect() {
     try {
         client = await wppconnect.create({
             session: 'n8n-whatsapp-bot', // A unique session name for this integration
+            headless: true,
+            useChrome: true,
+            browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'], // ✅ Add this line
             catchQR: (base64Qrimg, asciiQR, attempts, urlCode) => {
                 // This callback is triggered when a QR code is generated.
                 console.log('QR Code received!');

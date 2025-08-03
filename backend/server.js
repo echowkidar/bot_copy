@@ -326,7 +326,11 @@ app.post('/api/n8n-reply', async (req, res) => {
 app.listen(port, () => {
     console.log(`WPPConnect Backend server listening at http://localhost:${port}`);
     console.log('--- IMPORTANT ---');
-    console.log(`Ensure your n8n Webhook WhatsApp node is configured to receive POST requests at: ${N8N_WEBHOOK_URL}`);
+    //single url
+    //console.log(`Ensure your n8n Webhook WhatsApp node is configured to receive POST requests at: ${N8N_WEBHOOK_URL}`);
+    //multiple urls
+    console.log('Ensure your n8n Webhook WhatsApp nodes are configured to receive POST requests at:'); N8N_WEBHOOK_URLS.forEach(url => console.log(` - ${url}`));
+    //end
     console.log(`Configure your n8n workflow to send AI replies to this server's endpoint: http://localhost:${port}/api/n8n-reply`);
     console.log('This server needs to be run on your local machine or a server environment that can launch a browser (Puppeteer).');
     console.log('Scan the QR code that appears in this terminal or on your frontend (if connected) with your WhatsApp app.');

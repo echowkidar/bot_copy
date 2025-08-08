@@ -1,114 +1,177 @@
-// server.js
+// server.js - Enhanced with Message Queue for WhatsApp Images
 const express = require('express');
 const cors = require('cors');
-// WPPConnect library import
 const wppconnect = require('@wppconnect-team/wppconnect');
 
-// If you decide to save media files locally, uncomment these:
-// const path = require('path');
-// const fs = require('fs');
-
 const app = express();
-const port = process.env.PORT || 3002; // Use environment port or default to 3002
+const port = process.env.PORT || 3002;
 
-// Middleware
-app.use(cors()); // Enable CORS for frontend communication
-app.use(express.json()); // Parse JSON request bodies
+app.use(cors());
+app.use(express.json());
 
-// If serving static media files, uncomment this and create a 'media' directory:
-// app.use('/media', express.static(path.join(__dirname, 'media')));
+// --- Message Queue Implementation ---
+class MessageQueue {
+    constructor() {
+        this.queue = [];
+        this.processing = false;
+        this.processingDelay = 2000; // 2 seconds between each message
+    }
 
+    async enqueue(message) {
+        this.queue.push({
+            ...message,
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: Date.now()
+        });
+        console.log(`Message queued. Queue length: ${this.queue.length}`);
+        
+        if (!this.processing) {
+            this.processQueue();
+        }
+    }
 
-// --- Configuration for n8n Integration ---
-// IMPORTANT: Replace this with the actual URL of your n8n Webhook WhatsApp node.
-// You can find this URL in your n8n workflow's Webhook node settings.
+    async processQueue() {
+        if (this.processing || this.queue.length === 0) {
+            return;
+        }
 
-// Test url
-// const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook-test/e77397ab-fe1b-407b-9afe-77edab1dd92d';
+        this.processing = true;
+        console.log('Starting queue processing...');
 
-// Production url
-//const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/e77397ab-fe1b-407b-9afe-77edab1dd92d';
+        while (this.queue.length > 0) {
+            const message = this.queue.shift();
+            console.log(`Processing message ${message.id}. Remaining in queue: ${this.queue.length}`);
 
+            try {
+                // Process message with retry logic
+                await this.processMessageWithRetry(message);
+                
+                // Wait before processing next message to avoid race conditions
+                if (this.queue.length > 0) {
+                    console.log(`Waiting ${this.processingDelay}ms before next message...`);
+                    await this.delay(this.processingDelay);
+                }
+            } catch (error) {
+                console.error(`Failed to process message ${message.id}:`, error);
+                // You could implement a dead letter queue here for failed messages
+            }
+        }
 
-// Production url agent.echowkidar.in
-//const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://agent.echowkidar.in/webhook-test/e77397ab-fe1b-407b-9afe-77edab1dd92d';
+        this.processing = false;
+        console.log('Queue processing completed.');
+    }
 
-//const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://agent.echowkidar.in/webhook/e77397ab-fe1b-407b-9afe-77edab1dd92d';
-//const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/e77397ab-fe1b-407b-9afe-77edab1dd92d';
-//const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://agent.echowkidar.in/webhook-test/e77397ab-fe1b-407b-9afe-77edab1dd92d';
+    async processMessageWithRetry(message, maxRetries = 3) {
+        let attempts = 0;
+        
+        while (attempts < maxRetries) {
+            try {
+                await this.sendToN8N(message);
+                console.log(`Message ${message.id} processed successfully on attempt ${attempts + 1}`);
+                return;
+            } catch (error) {
+                attempts++;
+                console.error(`Attempt ${attempts} failed for message ${message.id}:`, error.message);
+                
+                if (attempts < maxRetries) {
+                    const delay = Math.pow(2, attempts) * 1000; // Exponential backoff
+                    console.log(`Retrying in ${delay}ms...`);
+                    await this.delay(delay);
+                }
+            }
+        }
+        
+        throw new Error(`Failed to process message ${message.id} after ${maxRetries} attempts`);
+    }
 
-// for single url - working fine
-//const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://agent.echowkidar.in/webhook/e77397ab-fe1b-407b-9afe-77edab1dd92d';
+    async sendToN8N(message) {
+        // Send to primary webhook URL only (remove duplicate processing)
+        const primaryWebhookUrl = N8N_WEBHOOK_URLS[0]; // Use first URL as primary
+        
+        const response = await fetch(primaryWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message)
+        });
 
-//console.log(`n8n Webhook URL set to: ${N8N_WEBHOOK_URL}`);
-// end
-//multiple urls start
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        console.log(`Message ${message.id} successfully sent to N8N`);
+        return response;
+    }
+
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Method to get queue status
+    getStatus() {
+        return {
+            queueLength: this.queue.length,
+            processing: this.processing
+        };
+    }
+}
+
+// Initialize message queue
+const messageQueue = new MessageQueue();
+
+// --- N8N Webhook Configuration ---
 const N8N_WEBHOOK_URLS = [
-    process.env.N8N_WEBHOOK_URL_1 || 'https://agent.echowkidar.in/webhook-test/e77397ab-fe1b-407b-9afe-77edab1dd92d',
-    process.env.N8N_WEBHOOK_URL_2 || 'https://agent.echowkidar.in/webhook/e77397ab-fe1b-407b-9afe-77edab1dd92d'
+    process.env.N8N_WEBHOOK_URL_1 || 'https://agent.echowkidar.in/webhook/e77397ab-fe1b-407b-9afe-77edab1dd92d',
+    // Keep backup URL for failover, but don't send duplicates
+    // process.env.N8N_WEBHOOK_URL_2 || 'https://agent.echowkidar.in/webhook-test/e77397ab-fe1b-407b-9afe-77edab1dd92d'
 ];
 
-console.log('Webhook URLs configured:', N8N_WEBHOOK_URLS);
-//end
+console.log('Primary Webhook URL configured:', N8N_WEBHOOK_URLS[0]);
 
 // --- WPPConnect Initialization ---
-let client; // This will hold your WPPConnect client instance
-let qrCodeData = null; // To store the QR code data
+let client;
+let qrCodeData = null;
 
-/**
- * Function to initialize WPPConnect.
- * This will attempt to create a WhatsApp Web session.
- * It handles QR code generation for authentication and monitors connection status.
- */
 async function initializeWPPConnect() {
     console.log('Attempting to initialize WPPConnect...');
     try {
         client = await wppconnect.create({
-            session: 'n8n-whatsapp-bot', // A unique session name for this integration
+            session: 'n8n-whatsapp-bot',
             headless: true,
             useChrome: true,
-            browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'], // ✅ Add this line
+            browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'],
             catchQR: (base64Qrimg, asciiQR, attempts, urlCode) => {
-                // This callback is triggered when a QR code is generated.
                 console.log('QR Code received!');
                 console.log('Scan this QR code with your WhatsApp app:');
-                console.log(asciiQR); // Log ASCII QR to terminal
+                console.log(asciiQR);
 
                 qrCodeData = {
-                    base64: base64Qrimg, // Base64 image data of the QR code
-                    ascii: asciiQR,      // ASCII representation of the QR code
-                    url: urlCode,        // URL code (data-ref)
-                    attempts: attempts   // Number of attempts
+                    base64: base64Qrimg,
+                    ascii: asciiQR,
+                    url: urlCode,
+                    attempts: attempts
                 };
             },
             statusFind: (statusSession, session) => {
-                // This callback is triggered on session status changes.
                 console.log('Session Status:', statusSession, 'Session Name:', session);
                 if (statusSession === 'isLogged') {
                     console.log('WPPConnect client is now logged in!');
-                    // You might want to clear qrCodeData here as it's no longer needed
                     qrCodeData = null;
-                } else if (statusSession === 'notLogged' || statusSession === 'browserClose' || statusSession === 'qrReadError') {
-                    console.log('WPPConnect client is not logged in or session closed. QR code may be needed again.');
-                    // You might want to re-trigger QR code generation or notify frontend.
                 }
             },
-            headless: true, // Set to 'true' to run Chrome in headless mode (no GUI), 'false' for GUI.
-            devtools: false, // Open devtools by default.
-            useChrome: true, // If false will use Chromium instance.
-            debug: false, // Opens a debug session.
-            logQR: true, // Logs QR automatically in terminal.
-            autoClose: 60000, // Automatically closes wppconnect if QR not scanned in 60 seconds (set to 0 or false to disable).
-            tokenStore: 'file', // Define how to store tokens (e.g., 'file', 'db', or custom interface).
-            folderNameToken: './tokens', // Folder name for storing session tokens if tokenStore is 'file'.
+            logQR: true,
+            autoClose: 60000,
+            tokenStore: 'file',
+            folderNameToken: './tokens',
         });
+
         console.log('WPPConnect client initialized.');
 
-        // --- Listen for incoming messages from WhatsApp ---
+        // --- Enhanced Message Handler with Queue ---
         client.onMessage(async (message) => {
             console.log('Received message from WhatsApp:', message.from, message.body, 'Type:', message.type);
 
-            // Ignore messages from self, group messages, or protocol messages
+            // Ignore unwanted messages
             if (message.fromMe || message.isGroupMsg || message.type === 'protocol' || message.type === 'notification_code') {
                 return;
             }
@@ -116,117 +179,58 @@ async function initializeWPPConnect() {
             let n8nPayload = {
                 from: message.from,
                 id: message.id,
-                type: message.type, // Include message type for n8n to differentiate
+                type: message.type,
                 timestamp: message.timestamp,
+                originalTimestamp: Date.now(), // Add processing timestamp
             };
 
             try {
                 // Handle different message types
                 if (message.type === 'chat' || message.type === 'ptt' || message.type === 'vcard' || message.type === 'location' || message.type === 'sticker') {
-                    // For text messages and other non-media types where body holds content
                     n8nPayload.body = message.body;
-                    console.log('Sending non-media message to n8n');
+                    console.log('Processing non-media message');
                 } else if (message.type === 'image' || message.type === 'video' || message.type === 'document' || message.type === 'audio') {
-                    console.log(`Received ${message.type} message. Attempting to download media...`);
+                    console.log(`Processing ${message.type} message. Attempting to download media...`);
+                    
                     try {
-                        const buffer = await client.decryptFile(message); // Get the media data as a Buffer
-
-                        // --- Option 1: Send Media as Base64 (Good for smaller files) ---
-                        // Be aware of payload size limits for very large files.
+                        const buffer = await client.decryptFile(message);
                         const base64Media = buffer.toString('base64');
+                        
                         n8nPayload.mediaBase64 = base64Media;
                         n8nPayload.mediaMimeType = message.mimetype;
                         n8nPayload.fileName = message.filename || `media_file.${message.mimetype.split('/')[1] || 'dat'}`;
-                        n8nPayload.caption = message.body || ''; // Caption for media, if any
+                        n8nPayload.caption = message.body || '';
 
-                        console.log(`Media (${message.mimetype}) downloaded and converted to base64 for n8n.`);
-
-                        // --- Option 2: Save Media Locally and Send URL (Recommended for larger files) ---
-                        // Uncomment the 'path' and 'fs' imports at the top
-                        // Uncomment the express.static middleware setup
-                        // and create a 'media' directory in your project root.
-
-                        // const mediaDir = path.join(__dirname, 'media');
-                        // if (!fs.existsSync(mediaDir)) {
-                        //     fs.mkdirSync(mediaDir);
-                        // }
-                        // const filename = `${message.id}.${message.mimetype.split('/')[1] || 'dat'}`;
-                        // const filePath = path.join(mediaDir, filename);
-                        // fs.writeFileSync(filePath, buffer);
-                        // n8nPayload.mediaUrl = `http://localhost:${port}/media/${filename}`; // Or your public server URL
-                        // n8nPayload.mediaMimeType = message.mimetype;
-                        // n8nPayload.fileName = message.filename || filename;
-                        // n8nPayload.caption = message.body || ''; // Caption for media, if any
-                        // console.log(`Media saved locally and URL provided to n8n: ${n8nPayload.mediaUrl}`);
-
+                        console.log(`Media (${message.mimetype}) downloaded and prepared for queue`);
                     } catch (mediaError) {
                         console.error('Error downloading or processing media:', mediaError);
-                        // If media download fails, send the original message body (which might be empty or just a caption)
                         n8nPayload.body = message.body || 'Media download failed.';
                     }
                 } else {
-                    console.log(`Received unhandled message type: ${message.type}. Sending original body if available.`);
+                    console.log(`Received unhandled message type: ${message.type}`);
                     n8nPayload.body = message.body || `Unhandled message type: ${message.type}`;
                 }
 
-                console.log('Forwarding payload to n8n:', JSON.stringify(n8nPayload, null, 2)); // Log pretty JSON
+                // Add to queue instead of sending immediately
+                console.log('Adding message to processing queue...');
+                await messageQueue.enqueue(n8nPayload);
 
-// for single url - working                
-//                const response = await fetch(N8N_WEBHOOK_URL, {
-//                    method: 'POST',
-//                    headers: { 'Content-Type': 'application/json' },
-//                    body: JSON.stringify(n8nPayload)
-//                });
-//end
-// for multiple urls start
-for (const url of N8N_WEBHOOK_URLS) {
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(n8nPayload)
-        });
-
-        if (response.ok) {
-            console.log(`Message successfully forwarded to n8n webhook at: ${url}`);
-        } else {
-            const errorText = await response.text();
-            console.error(`Failed to forward message to ${url}:`, response.status, response.statusText, 'Body:', errorText);
-        }
-    } catch (err) {
-        console.error(`Error sending to webhook ${url}:`, err);
-    }
-}
-// end
-
-                if (response.ok) {
-                    console.log('Message successfully forwarded to n8n.');
-                    // n8n will process this and call our /api/n8n-reply endpoint with the response.
-                } else {
-                    const errorText = await response.text();
-                    console.error('Failed to forward message to n8n:', response.status, response.statusText, 'Response Body:', errorText);
-                }
             } catch (error) {
-                console.error('Error processing or forwarding message to n8n:', error);
+                console.error('Error preparing message for queue:', error);
             }
         });
 
     } catch (error) {
         console.error('Error initializing WPPConnect:', error);
-        qrCodeData = null; // Clear QR data on error
+        qrCodeData = null;
     }
 }
 
-// Call the initialization function when the server starts
+// Initialize WPPConnect
 initializeWPPConnect();
 
 // --- API Endpoints ---
 
-/**
- * GET /api/qr-code
- * Returns the current QR code data for authentication.
- * Frontend polls this to display the QR code.
- */
 app.get('/api/qr-code', (req, res) => {
     if (qrCodeData) {
         res.json({ success: true, qrCode: qrCodeData });
@@ -235,12 +239,16 @@ app.get('/api/qr-code', (req, res) => {
     }
 });
 
-/**
- * POST /api/send-message
- * Sends a text message using WPPConnect.
- * This endpoint is for your frontend to send messages directly.
- * Requires 'to' (phone number) and 'message' in the request body.
- */
+// New endpoint to check queue status
+app.get('/api/queue-status', (req, res) => {
+    const status = messageQueue.getStatus();
+    res.json({
+        success: true,
+        ...status,
+        message: `Queue has ${status.queueLength} messages. Processing: ${status.processing}`
+    });
+});
+
 app.post('/api/send-message', async (req, res) => {
     const { to, message } = req.body;
 
@@ -248,7 +256,7 @@ app.post('/api/send-message', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Phone number and message are required.' });
     }
 
-    if (!client || !(await client.isConnected())) { // Use isConnected for better check
+    if (!client || !(await client.isConnected())) {
         return res.status(401).json({ success: false, message: 'WPPConnect client not authenticated or not ready.' });
     }
 
@@ -263,12 +271,6 @@ app.post('/api/send-message', async (req, res) => {
     }
 });
 
-/**
- * POST /api/send-media
- * Sends media (e.g., an image or file) using WPPConnect.
- * This endpoint is for your frontend to send media directly.
- * Requires 'to' (phone number) and 'filePath' (path to media file on server) in the request body.
- */
 app.post('/api/send-media', async (req, res) => {
     const { to, filePath, caption } = req.body;
 
@@ -282,8 +284,6 @@ app.post('/api/send-media', async (req, res) => {
 
     console.log(`Attempting to send media ${filePath} to ${to} with caption: "${caption || ''}"`);
     try {
-        // filePath should be a local path on the server where this Node.js app is running
-        // Or a URL to the file if it's publicly accessible
         const result = await client.sendFile(to, filePath, 'media_file', caption);
         console.log('Media sent result:', result);
         res.json({ success: true, message: 'Media sent successfully.', result: result });
@@ -293,12 +293,6 @@ app.post('/api/send-media', async (req, res) => {
     }
 });
 
-/**
- * POST /api/n8n-reply
- * New endpoint for n8n to send AI-generated replies back to WhatsApp.
- * Requires 'to' (recipient's WhatsApp ID, e.g., '919319338997@c.us') and 'reply' (AI message)
- * in the request body.
- */
 app.post('/api/n8n-reply', async (req, res) => {
     const { to, reply } = req.body;
 
@@ -321,17 +315,12 @@ app.post('/api/n8n-reply', async (req, res) => {
     }
 });
 
-
 // Start the server
 app.listen(port, () => {
     console.log(`WPPConnect Backend server listening at http://localhost:${port}`);
     console.log('--- IMPORTANT ---');
-    //single url
-    //console.log(`Ensure your n8n Webhook WhatsApp node is configured to receive POST requests at: ${N8N_WEBHOOK_URL}`);
-    //multiple urls
-    console.log('Ensure your n8n Webhook WhatsApp nodes are configured to receive POST requests at:'); N8N_WEBHOOK_URLS.forEach(url => console.log(` - ${url}`));
-    //end
-    console.log(`Configure your n8n workflow to send AI replies to this server's endpoint: http://localhost:${port}/api/n8n-reply`);
-    console.log('This server needs to be run on your local machine or a server environment that can launch a browser (Puppeteer).');
-    console.log('Scan the QR code that appears in this terminal or on your frontend (if connected) with your WhatsApp app.');
+    console.log(`Primary N8N Webhook URL: ${N8N_WEBHOOK_URLS[0]}`);
+    console.log(`Configure your n8n workflow to send AI replies to: http://localhost:${port}/api/n8n-reply`);
+    console.log(`Check queue status at: http://localhost:${port}/api/queue-status`);
+    console.log('Message queue initialized with 2-second processing delay.');
 });

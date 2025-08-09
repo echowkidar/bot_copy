@@ -100,7 +100,7 @@ async function processMediaQueue() {
 
         // Wait 5 seconds before sending next media
         console.log("Waiting 5 seconds before sending next media...");
-        await delay(5000);
+        await delay(15000);
     }
 
     isProcessingQueue = false;

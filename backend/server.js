@@ -60,6 +60,55 @@ let qrCodeData = null; // To store the QR code data
  * This will attempt to create a WhatsApp Web session.
  * It handles QR code generation for authentication and monitors connection status.
  */
+
+//start que system
+// --- Media Queue ---
+let mediaQueue = [];
+let isProcessingQueue = false;
+
+// Delay helper
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Process queue sequentially with 5s delay
+async function processMediaQueue() {
+    if (isProcessingQueue) return; // Already processing
+    isProcessingQueue = true;
+
+    while (mediaQueue.length > 0) {
+        const { payload, urls } = mediaQueue.shift();
+
+        for (const url of urls) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    console.log(`Media successfully forwarded to: ${url}`);
+                } else {
+                    const errorText = await response.text();
+                    console.error(`Failed to forward media to ${url}:`, errorText);
+                }
+            } catch (err) {
+                console.error(`Error sending media to ${url}:`, err);
+            }
+        }
+
+        // Wait 5 seconds before sending next media
+        console.log("Waiting 5 seconds before sending next media...");
+        await delay(5000);
+    }
+
+    isProcessingQueue = false;
+}
+
+//end que system
+
+
 async function initializeWPPConnect() {
     console.log('Attempting to initialize WPPConnect...');
     try {
@@ -105,111 +154,100 @@ async function initializeWPPConnect() {
         console.log('WPPConnect client initialized.');
 
         // --- Listen for incoming messages from WhatsApp ---
-        client.onMessage(async (message) => {
-            console.log('Received message from WhatsApp:', message.from, message.body, 'Type:', message.type);
+        // --- Listen for incoming messages from WhatsApp ---
+client.onMessage(async (message) => {
+    console.log('Received message from WhatsApp:', message.from, message.body, 'Type:', message.type);
 
-            // Ignore messages from self, group messages, or protocol messages
-            if (message.fromMe || message.isGroupMsg || message.type === 'protocol' || message.type === 'notification_code') {
-                return;
+    // Ignore messages from self, group messages, or protocol messages
+    if (message.fromMe || message.isGroupMsg || message.type === 'protocol' || message.type === 'notification_code') {
+        return;
+    }
+
+    // --- Build base payload ---
+    let n8nPayload = {
+        from: message.from,
+        id: message.id,
+        type: message.type, // Include message type for n8n to differentiate
+        timestamp: message.timestamp,
+    };
+
+    try {
+        // --- For text messages and other non-media types ---
+        if (message.type === 'chat' || message.type === 'ptt' || message.type === 'vcard' || message.type === 'location' || message.type === 'sticker') {
+            n8nPayload.body = message.body;
+            console.log('Sending non-media message to n8n instantly');
+
+            // Send instantly to all webhooks
+            for (const url of N8N_WEBHOOK_URLS) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(n8nPayload)
+                    });
+                    if (response.ok) {
+                        console.log(`Non-media message sent to: ${url}`);
+                    } else {
+                        const errorText = await response.text();
+                        console.error(`Failed to send non-media message to ${url}:`, errorText);
+                    }
+                } catch (err) {
+                    console.error(`Error sending non-media message to ${url}:`, err);
+                }
+            }
+            return; // Stop here for non-media
+        }
+
+        // --- For media types (delay queue) ---
+        if (message.type === 'image' || message.type === 'video' || message.type === 'document' || message.type === 'audio') {
+            console.log(`Received ${message.type} message. Attempting to download media...`);
+            try {
+                const buffer = await client.decryptFile(message); // Get the media data as a Buffer
+                const base64Media = buffer.toString('base64');
+                n8nPayload.mediaBase64 = base64Media;
+                n8nPayload.mediaMimeType = message.mimetype;
+                n8nPayload.fileName = message.filename || `media_file.${message.mimetype.split('/')[1] || 'dat'}`;
+                n8nPayload.caption = message.body || ''; // Caption for media, if any
+
+                console.log(`Media (${message.mimetype}) downloaded and queued for delayed sending.`);
+            } catch (mediaError) {
+                console.error('Error downloading or processing media:', mediaError);
+                n8nPayload.body = message.body || 'Media download failed.';
             }
 
-            let n8nPayload = {
-                from: message.from,
-                id: message.id,
-                type: message.type, // Include message type for n8n to differentiate
-                timestamp: message.timestamp,
-            };
-
-            try {
-                // Handle different message types
-                if (message.type === 'chat' || message.type === 'ptt' || message.type === 'vcard' || message.type === 'location' || message.type === 'sticker') {
-                    // For text messages and other non-media types where body holds content
-                    n8nPayload.body = message.body;
-                    console.log('Sending non-media message to n8n');
-                } else if (message.type === 'image' || message.type === 'video' || message.type === 'document' || message.type === 'audio') {
-                    console.log(`Received ${message.type} message. Attempting to download media...`);
-                    try {
-                        const buffer = await client.decryptFile(message); // Get the media data as a Buffer
-
-                        // --- Option 1: Send Media as Base64 (Good for smaller files) ---
-                        // Be aware of payload size limits for very large files.
-                        const base64Media = buffer.toString('base64');
-                        n8nPayload.mediaBase64 = base64Media;
-                        n8nPayload.mediaMimeType = message.mimetype;
-                        n8nPayload.fileName = message.filename || `media_file.${message.mimetype.split('/')[1] || 'dat'}`;
-                        n8nPayload.caption = message.body || ''; // Caption for media, if any
-
-                        console.log(`Media (${message.mimetype}) downloaded and converted to base64 for n8n.`);
-
-                        // --- Option 2: Save Media Locally and Send URL (Recommended for larger files) ---
-                        // Uncomment the 'path' and 'fs' imports at the top
-                        // Uncomment the express.static middleware setup
-                        // and create a 'media' directory in your project root.
-
-                        // const mediaDir = path.join(__dirname, 'media');
-                        // if (!fs.existsSync(mediaDir)) {
-                        //     fs.mkdirSync(mediaDir);
-                        // }
-                        // const filename = `${message.id}.${message.mimetype.split('/')[1] || 'dat'}`;
-                        // const filePath = path.join(mediaDir, filename);
-                        // fs.writeFileSync(filePath, buffer);
-                        // n8nPayload.mediaUrl = `http://localhost:${port}/media/${filename}`; // Or your public server URL
-                        // n8nPayload.mediaMimeType = message.mimetype;
-                        // n8nPayload.fileName = message.filename || filename;
-                        // n8nPayload.caption = message.body || ''; // Caption for media, if any
-                        // console.log(`Media saved locally and URL provided to n8n: ${n8nPayload.mediaUrl}`);
-
-                    } catch (mediaError) {
-                        console.error('Error downloading or processing media:', mediaError);
-                        // If media download fails, send the original message body (which might be empty or just a caption)
-                        n8nPayload.body = message.body || 'Media download failed.';
-                    }
-                } else {
-                    console.log(`Received unhandled message type: ${message.type}. Sending original body if available.`);
-                    n8nPayload.body = message.body || `Unhandled message type: ${message.type}`;
-                }
-
-                console.log('Forwarding payload to n8n:', JSON.stringify(n8nPayload, null, 2)); // Log pretty JSON
-
-// for single url - working                
-//                const response = await fetch(N8N_WEBHOOK_URL, {
-//                    method: 'POST',
-//                    headers: { 'Content-Type': 'application/json' },
-//                    body: JSON.stringify(n8nPayload)
-//                });
-//end
-// for multiple urls start
-for (const url of N8N_WEBHOOK_URLS) {
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(n8nPayload)
-        });
-
-        if (response.ok) {
-            console.log(`Message successfully forwarded to n8n webhook at: ${url}`);
-        } else {
-            const errorText = await response.text();
-            console.error(`Failed to forward message to ${url}:`, response.status, response.statusText, 'Body:', errorText);
+            // Push media into queue and process with delay
+            mediaQueue.push({ payload: n8nPayload, urls: N8N_WEBHOOK_URLS });
+            processMediaQueue();
+            return; // Don't send instantly
         }
-    } catch (err) {
-        console.error(`Error sending to webhook ${url}:`, err);
-    }
-}
-// end
 
+        // --- For unhandled message types ---
+        console.log(`Received unhandled message type: ${message.type}. Sending original body if available.`);
+        n8nPayload.body = message.body || `Unhandled message type: ${message.type}`;
+
+        for (const url of N8N_WEBHOOK_URLS) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(n8nPayload)
+                });
                 if (response.ok) {
-                    console.log('Message successfully forwarded to n8n.');
-                    // n8n will process this and call our /api/n8n-reply endpoint with the response.
+                    console.log(`Unhandled type message sent to: ${url}`);
                 } else {
                     const errorText = await response.text();
-                    console.error('Failed to forward message to n8n:', response.status, response.statusText, 'Response Body:', errorText);
+                    console.error(`Failed to send unhandled type message to ${url}:`, errorText);
                 }
-            } catch (error) {
-                console.error('Error processing or forwarding message to n8n:', error);
+            } catch (err) {
+                console.error(`Error sending unhandled type message to ${url}:`, err);
             }
-        });
+        }
+
+    } catch (error) {
+        console.error('Error processing or forwarding message to n8n:', error);
+    }
+});
+;
 
     } catch (error) {
         console.error('Error initializing WPPConnect:', error);

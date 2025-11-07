@@ -1,3 +1,2 @@
-2025/08/02-01:06:03.430 33c0 Reusing MANIFEST E:\my_git\whatsapp bot\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Session Storage/MANIFEST-000001
-2025/08/02-01:06:03.431 33c0 Recovering log #3
-2025/08/02-01:06:03.436 33c0 Reusing old log E:\my_git\whatsapp bot\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Session Storage/000003.log 
+2025/11/07-13:37:46.185 9294 Creating DB C:\Users\salar\OneDrive\Desktop\docker\New folder (2)\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Session Storage since it was missing.
+2025/11/07-13:37:46.270 9294 Reusing MANIFEST C:\Users\salar\OneDrive\Desktop\docker\New folder (2)\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Session Storage/MANIFEST-000001

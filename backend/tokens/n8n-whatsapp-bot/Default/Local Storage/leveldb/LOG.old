@@ -1,6 +1,0 @@
-2025/08/02-00:35:14.926 32bc Reusing MANIFEST E:\my_git\whatsapp bot\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Local Storage\leveldb/MANIFEST-000001
-2025/08/02-00:35:14.941 32bc Recovering log #3
-2025/08/02-00:35:14.946 32bc Reusing old log E:\my_git\whatsapp bot\bot_copy\backend\tokens\n8n-whatsapp-bot\Default\Local Storage\leveldb/000003.log 
-2025/08/02-00:54:15.959 261c Level-0 table #5: started
-2025/08/02-00:54:15.966 261c Level-0 table #5: 16094 bytes OK
-2025/08/02-00:54:15.968 261c Delete type=0 #3

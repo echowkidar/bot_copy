@@ -113,45 +113,73 @@ async function initializeWPPConnect() {
     console.log('Attempting to initialize WPPConnect...');
     try {
         client = await wppconnect.create({
-            session: 'n8n-whatsapp-bot', // A unique session name for this integration
-            headless: true,
+            session: 'n8n-whatsapp-bot',
+            headless: 'new', // ✅ Change to 'new' for better Puppeteer compatibility
             useChrome: true,
-            browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'], // ✅ Add this line
+            browserArgs: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ],
+            puppeteerOptions: {
+                headless: 'new', // ✅ Explicitly set for Puppeteer
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu'
+                ]
+            },
+            logQR: true, // ✅ Keep only one logQR
             catchQR: (base64Qrimg, asciiQR, attempts, urlCode) => {
-                // This callback is triggered when a QR code is generated.
-                console.log('QR Code received!');
+                console.log('\n========================');
+                console.log('QR CODE RECEIVED!');
+                console.log('========================');
                 console.log('Scan this QR code with your WhatsApp app:');
-                console.log(asciiQR); // Log ASCII QR to terminal
+                console.log('\n');
+                console.log(asciiQR); // ASCII QR terminal mein
+                console.log('\n');
+                console.log(`Attempt: ${attempts}`);
+                console.log('========================\n');
 
                 qrCodeData = {
-                    base64: base64Qrimg, // Base64 image data of the QR code
-                    ascii: asciiQR,      // ASCII representation of the QR code
-                    url: urlCode,        // URL code (data-ref)
-                    attempts: attempts   // Number of attempts
+                    base64: base64Qrimg,
+                    ascii: asciiQR,
+                    url: urlCode,
+                    attempts: attempts
                 };
             },
             statusFind: (statusSession, session) => {
-                // This callback is triggered on session status changes.
-                console.log('Session Status:', statusSession, 'Session Name:', session);
+                console.log('\n--- Session Status Update ---');
+                console.log('Status:', statusSession);
+                console.log('Session:', session);
+                console.log('----------------------------\n');
+                
                 if (statusSession === 'isLogged') {
-                    console.log('WPPConnect client is now logged in!');
-                    // You might want to clear qrCodeData here as it's no longer needed
+                    console.log('✅ WPPConnect client is now logged in!');
                     qrCodeData = null;
-                } else if (statusSession === 'notLogged' || statusSession === 'browserClose' || statusSession === 'qrReadError') {
-                    console.log('WPPConnect client is not logged in or session closed. QR code may be needed again.');
-                    // You might want to re-trigger QR code generation or notify frontend.
+                } else if (statusSession === 'notLogged') {
+                    console.log('⚠️ Client is not logged in. QR code needed.');
+                } else if (statusSession === 'browserClose') {
+                    console.log('❌ Browser closed. Reinitializing...');
+                    qrCodeData = null;
+                    // Optional: Auto-restart
+                    setTimeout(() => initializeWPPConnect(), 5000);
+                } else if (statusSession === 'qrReadError') {
+                    console.log('❌ QR code read error. Retrying...');
                 }
             },
-            headless: true, // Set to 'true' to run Chrome in headless mode (no GUI), 'false' for GUI.
-            devtools: false, // Open devtools by default.
-            useChrome: true, // If false will use Chromium instance.
-            debug: false, // Opens a debug session.
-            logQR: true, // Logs QR automatically in terminal.
-            autoClose: 60000, // Automatically closes wppconnect if QR not scanned in 60 seconds (set to 0 or false to disable).
-            tokenStore: 'file', // Define how to store tokens (e.g., 'file', 'db', or custom interface).
-            folderNameToken: './tokens', // Folder name for storing session tokens if tokenStore is 'file'.
+            devtools: false,
+            debug: false,
+            autoClose: 60000,
+            tokenStore: 'file',
+            folderNameToken: './tokens',
+            disableWelcome: false, // ✅ Welcome message show hoga
+            updatesLog: true // ✅ Updates log enable
         });
-        console.log('WPPConnect client initialized.');
+        
+        console.log('✅ WPPConnect client initialized successfully.');
 
         // --- Listen for incoming messages from WhatsApp ---
         // --- Listen for incoming messages from WhatsApp ---
